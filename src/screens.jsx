@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Beef, Camera, Check, ChevronDown, ChevronRight, ChevronUp, Clock, Coffee, Cookie, Copy, Droplets, Dumbbell, FileText, Flame, GripVertical, History, Minus, Moon, Pencil, Plus, RefreshCw, Repeat, ScanBarcode, Share2, SlidersHorizontal, Sparkles, StickyNote, Sun, Target, Timer, Trash2, TrendingUp, Trophy, UserPlus, Users, Utensils, Wheat, X, Zap } from 'lucide-react';
+import { ArrowDown, ArrowUp, Beef, Camera, Check, ChevronDown, ChevronRight, ChevronUp, Clock, Coffee, Cookie, Copy, Droplets, Dumbbell, FileText, Flame, GripVertical, History, Minus, Moon, Pencil, Plus, RefreshCw, Repeat, Ruler, ScanBarcode, Scale, Share2, SlidersHorizontal, Sparkles, StickyNote, Sun, Target, Timer, Trash2, TrendingUp, Trophy, UserPlus, Users, Utensils, Wheat, X, Zap } from 'lucide-react';
 import { useGym } from './store';
 import { MUSCLES, calcStreak, e1rm, fmt, friendCodeOf, iso, parseRoutines, todayRoutine, weekSets, weekVol } from './lib';
 import { Bar, Card, Ring, field, muted, primary } from './ui';
@@ -2371,6 +2371,251 @@ export function Workout({ routine, go, activeDate }) {
 
 const WEEK_DAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
+const BODY_MEASURES = [
+  ['waist', 'Cintura'],
+  ['hip', 'Cadera'],
+  ['chest', 'Pecho'],
+  ['arm', 'Brazo'],
+  ['thigh', 'Muslo'],
+];
+
+const emptyBodyMetric = () => ({
+  date: iso(),
+  weight: '',
+  waist: '',
+  hip: '',
+  chest: '',
+  arm: '',
+  thigh: '',
+});
+
+function BodyMeasurements() {
+  const { bodyMetrics = [], saveBodyMetric, deleteBodyMetric } = useGym();
+  const [form, setForm] = useState(emptyBodyMetric);
+  const [editingDate, setEditingDate] = useState(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [formError, setFormError] = useState('');
+  const updateForm = (key, value) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setFormError('');
+  };
+  const ordered = [...bodyMetrics].sort((a, b) => a.date.localeCompare(b.date));
+  const weights = ordered.filter((entry) => Number.isFinite(Number(entry.weight)) && Number(entry.weight) > 0);
+  const latestWeight = weights.at(-1);
+  const previousWeight = weights.length > 1 ? weights.at(-2) : null;
+  const weightChange = latestWeight && previousWeight ? Number(latestWeight.weight) - Number(previousWeight.weight) : null;
+  const chartWeights = weights.slice(-8);
+  const minWeight = Math.min(...chartWeights.map((entry) => Number(entry.weight)));
+  const maxWeight = Math.max(...chartWeights.map((entry) => Number(entry.weight)));
+  const chartPoints = chartWeights.map((entry, index) => ({
+    x: chartWeights.length > 1 ? 12 + index * (276 / (chartWeights.length - 1)) : 150,
+    y: 82 - ((Number(entry.weight) - minWeight) / (maxWeight - minWeight || 1)) * 56,
+  }));
+  const chartLine = chartPoints.map((point) => `${point.x},${point.y}`).join(' ');
+
+  const openNewForm = () => {
+    setForm(emptyBodyMetric());
+    setEditingDate(null);
+    setFormError('');
+    setFormOpen(true);
+  };
+
+  const editMetric = (metric) => {
+    setForm({ ...emptyBodyMetric(), ...metric });
+    setEditingDate(metric.date);
+    setFormError('');
+    setFormOpen(true);
+  };
+
+  const submitMetric = (event) => {
+    event.preventDefault();
+    setFormError('');
+    const metric = { date: form.date };
+    for (const key of ['weight', ...BODY_MEASURES.map(([name]) => name)]) {
+      const raw = String(form[key] ?? '').trim().replace(',', '.');
+      if (!raw) continue;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value <= 0) {
+        setFormError('Introduce valores mayores que cero.');
+        return;
+      }
+      metric[key] = value;
+    }
+    if (Object.keys(metric).length === 1) {
+      setFormError('Añade el peso o al menos una medida.');
+      return;
+    }
+    if (bodyMetrics.some((entry) => entry.date === metric.date && entry.date !== editingDate)) {
+      setFormError('Ya existe un registro para esa fecha. Edítalo desde el historial.');
+      return;
+    }
+    saveBodyMetric(metric, editingDate);
+    setForm(emptyBodyMetric());
+    setEditingDate(null);
+    setFormOpen(false);
+  };
+
+  const removeMetric = (date) => {
+    if (window.confirm('¿Eliminar este registro de peso y medidas?')) {
+      deleteBodyMetric(date);
+      if (editingDate === date) {
+        setEditingDate(null);
+        setForm(emptyBodyMetric());
+        setFormOpen(false);
+        setFormError('');
+      }
+    }
+  };
+
+  return (
+    <section>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight">Peso y medidas</h2>
+          <p className={`mt-0.5 text-xs ${muted}`}>Sigue tu evolución corporal junto a tu fuerza</p>
+        </div>
+        <button
+          type="button"
+          onClick={formOpen ? () => setFormOpen(false) : openNewForm}
+          aria-label={formOpen ? 'Cerrar formulario' : 'Añadir registro corporal'}
+          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+        >
+          {formOpen ? <X size={16} /> : <Plus size={17} />}
+        </button>
+      </div>
+
+      {formOpen && (
+        <Card className="mt-3">
+          <form onSubmit={submitMetric} className="space-y-3">
+            <label className="block text-xs font-semibold">
+              <span className={`mb-1 block ${muted}`}>Fecha</span>
+              <input
+                type="date"
+                required
+                value={form.date}
+                onChange={(event) => updateForm('date', event.target.value)}
+                className={`${field} w-full`}
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-2.5">
+              <label className="rounded-2xl bg-zinc-200/70 p-3 text-xs font-semibold dark:bg-zinc-800/70">
+                <span className={`flex items-center gap-1 ${muted}`}><Scale size={13} /> Peso (kg)</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0.1"
+                  step="0.1"
+                  max="999.9"
+                  placeholder="Opcional"
+                  value={form.weight ?? ''}
+                  onChange={(event) => updateForm('weight', event.target.value)}
+                  className="mt-1 w-full bg-transparent text-base font-extrabold outline-none"
+                />
+              </label>
+              {BODY_MEASURES.map(([key, label]) => (
+                <label key={key} className="rounded-2xl bg-zinc-200/70 p-3 text-xs font-semibold dark:bg-zinc-800/70">
+                  <span className={`flex items-center gap-1 ${muted}`}><Ruler size={13} /> {label} (cm)</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0.1"
+                    step="0.1"
+                    max="999.9"
+                    placeholder="Opcional"
+                    value={form[key] ?? ''}
+                    onChange={(event) => updateForm(key, event.target.value)}
+                    className="mt-1 w-full bg-transparent text-base font-extrabold outline-none"
+                  />
+                </label>
+              ))}
+            </div>
+            <p className={`text-xs ${muted}`}>Añade el peso, una medida o ambos. Solo tú puedes ver estos datos.</p>
+            {formError && <p role="alert" className="text-sm font-semibold text-rose-600 dark:text-rose-400">{formError}</p>}
+            <button type="submit" className={`${primary} !h-11 !text-sm`}>
+              {editingDate ? 'Guardar cambios' : 'Guardar registro'}
+            </button>
+          </form>
+        </Card>
+      )}
+
+      {ordered.length === 0 ? (
+        <Card className="mt-3 text-center">
+          <Scale size={22} className={`mx-auto ${muted}`} />
+          <p className="mt-2 text-sm font-semibold">Aún no tienes registros corporales</p>
+          <p className={`mt-1 text-xs ${muted}`}>Añade tu peso o medidas para empezar a ver tu evolución.</p>
+          {!formOpen && (
+            <button type="button" onClick={openNewForm} className={`${primary} mt-4 !h-11 !text-sm`}>
+              Añadir primer registro
+            </button>
+          )}
+        </Card>
+      ) : (
+        <>
+          {latestWeight && (
+            <Card className="mt-3">
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <p className={`text-xs font-semibold uppercase tracking-wider ${muted}`}>Último peso</p>
+                  <p className="mt-1 text-4xl font-extrabold tracking-tight">{fmt(Number(latestWeight.weight), 1)} <span className={`text-base ${muted}`}>kg</span></p>
+                  <p className={`mt-1 text-xs ${muted}`}>{shortDate(latestWeight.date)}</p>
+                </div>
+                {weightChange !== null && (
+                  <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${weightChange > 0 ? 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200' : weightChange < 0 ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950' : 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'}`}>
+                    {weightChange > 0 ? '+' : ''}{fmt(weightChange, 1)} kg
+                  </span>
+                )}
+              </div>
+              {chartPoints.length > 1 && (
+                <>
+                  <svg viewBox="0 0 300 96" className="mt-4 w-full text-zinc-950 dark:text-white" role="img" aria-label="Evolución del peso corporal">
+                    <line x1="12" y1="82" x2="288" y2="82" stroke="currentColor" strokeOpacity="0.1" />
+                    <polyline points={chartLine} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                    {chartPoints.map((point, index) => (
+                      <circle key={chartWeights[index].date} cx={point.x} cy={point.y} r={index === chartPoints.length - 1 ? 4 : 3} className={index === chartPoints.length - 1 ? 'fill-zinc-950 dark:fill-white' : 'fill-zinc-400 dark:fill-zinc-500'} />
+                    ))}
+                  </svg>
+                  <div className={`flex justify-between text-[11px] ${muted}`}>
+                    <span>{shortDate(chartWeights[0].date)}</span>
+                    <span>{shortDate(chartWeights.at(-1).date)}</span>
+                  </div>
+                </>
+              )}
+              <div className="mt-4 grid grid-cols-3 gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+                {BODY_MEASURES.map(([key, label]) => {
+                  const entry = [...ordered].reverse().find((item) => Number(item[key]) > 0);
+                  return (
+                    <div key={key}>
+                      <p className={`text-[10px] font-semibold uppercase tracking-wider ${muted}`}>{label}</p>
+                      <p className="mt-0.5 text-sm font-extrabold">{entry ? `${fmt(Number(entry[key]), 1)} cm` : '—'}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
+          <div className="mt-3 space-y-2">
+            {[...ordered].reverse().slice(0, 6).map((entry) => (
+              <div key={entry.date} className="flex items-center gap-3 rounded-[22px] bg-zinc-100 px-4 py-3 dark:bg-zinc-900">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold">{shortDate(entry.date)}</p>
+                  <p className={`mt-0.5 truncate text-xs ${muted}`}>
+                    {entry.weight ? `${fmt(Number(entry.weight), 1)} kg` : ''}
+                    {entry.weight && BODY_MEASURES.some(([key]) => entry[key]) ? ' · ' : ''}
+                    {BODY_MEASURES.filter(([key]) => entry[key]).map(([key, label]) => `${label.toLowerCase()} ${fmt(Number(entry[key]), 1)} cm`).join(' · ') || (!entry.weight ? 'Medidas corporales' : '')}
+                  </p>
+                </div>
+                <button type="button" onClick={() => editMetric(entry)} aria-label={`Editar registro del ${shortDate(entry.date)}`} className={trash}><Pencil size={15} /></button>
+                <button type="button" onClick={() => removeMetric(entry.date)} aria-label={`Eliminar registro del ${shortDate(entry.date)}`} className={trash}><Trash2 size={15} /></button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 export function Progress() {
   const { sessions, routines, goals, saveGoals, updateSession, deleteSession } = useGym();
   const [ex, setEx] = useState('');
@@ -2554,6 +2799,8 @@ export function Progress() {
           <Bar value={capTotal ? weekPct : Math.min(100, doneSets * 4)} />
         </div>
       </Card>
+
+      <BodyMeasurements />
 
       <section>
         <div className="flex items-center justify-between">
@@ -3309,8 +3556,8 @@ const macros = [
 const blank = { type: 'Desayuno', name: '', kcal: '', p: '', c: '', g: '' };
 const blankRecipe = { ...blank, desc: '' };
 
-export function Diet({ activeDate }) {
-  const { meals, goals, recipes = [], addMeal, deleteMeal, saveGoals, saveRecipes, cravings = {}, saveCraving } = useGym();
+export function Diet({ activeDate, go }) {
+  const { meals, goals, recipes = [], addMeal, deleteMeal, saveGoals, saveRecipes, cravings = {}, saveCraving, bodyMetrics = [] } = useGym();
   const [f, setF] = useState(blank);
   const [editing, setEditing] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -3384,6 +3631,7 @@ export function Diet({ activeDate }) {
 
   const remainingKcal = myGoals.kcal - tot.kcal;
   const overKcal = remainingKcal < 0;
+  const latestBodyMetric = [...bodyMetrics].sort((a, b) => a.date.localeCompare(b.date)).at(-1);
 
   return (
     <div className="space-y-4">
@@ -3460,6 +3708,24 @@ export function Diet({ activeDate }) {
           </form>
         )}
       </Card>
+
+      <button
+        type="button"
+        onClick={() => go('progreso')}
+        className="flex w-full items-center gap-3 rounded-[24px] bg-zinc-100 p-4 text-left transition-colors hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+      >
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white dark:bg-white dark:text-zinc-950">
+          <Scale size={18} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold">Peso y medidas</span>
+          <span className={`mt-0.5 block truncate text-xs ${muted}`}>
+            {latestBodyMetric?.weight ? `Último peso: ${fmt(Number(latestBodyMetric.weight), 1)} kg · ` : ''}
+            Registra tu evolución corporal
+          </span>
+        </span>
+        <ChevronRight size={18} className={muted} />
+      </button>
 
       <section>
         <div className="flex items-center justify-between">

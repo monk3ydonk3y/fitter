@@ -8,49 +8,8 @@ const DEFAULT_RECIPES = [
   { id: 'r4', name: 'Salmón a la plancha', desc: 'Con guarnición de espárragos', type: 'Cena', kcal: 400, p: 35, c: 0, g: 25 },
 ];
 
-const DEFAULT_FRIENDS = [
-  {
-    id: 'f-carlos',
-    name: 'Carlos Méndez',
-    code: 'GYM-C94M21',
-    status: 'Hoy · Empuje',
-    streak: 9,
-    weeklyVol: 14850,
-    prevWeekVol: 13200,
-    weeklySets: 42,
-    weeklyCap: 54,
-    topLift: { ex: 'Press banca', kg: 105 },
-    routineName: 'Empuje Fuerza',
-    exercises: [
-      { name: 'Press banca', muscle: 'Pecho', targetSets: 4, targetReps: '6', defaultWeight: 90 },
-      { name: 'Press militar', muscle: 'Hombro', targetSets: 3, targetReps: '8', defaultWeight: 55 },
-      { name: 'Fondos lastrados', muscle: 'Pecho', targetSets: 3, targetReps: '10', defaultWeight: 15 },
-      { name: 'Elevaciones laterales', muscle: 'Hombro', targetSets: 4, targetReps: '15', defaultWeight: 12 },
-    ],
-    baseReactions: { '🔥': 4, '💪': 3, '👏': 2, '⚡': 1, '🏆': 2 },
-  },
-  {
-    id: 'f-elena',
-    name: 'Elena Navarro',
-    code: 'GYM-E72N88',
-    status: 'Ayer · Pierna',
-    streak: 14,
-    weeklyVol: 18400,
-    prevWeekVol: 16900,
-    weeklySets: 48,
-    weeklyCap: 52,
-    topLift: { ex: 'Sentadilla', kg: 118 },
-    routineName: 'Pierna Glúteo',
-    exercises: [
-      { name: 'Sentadilla', muscle: 'Piernas', targetSets: 4, targetReps: '6', defaultWeight: 95 },
-      { name: 'Hip thrust', muscle: 'Piernas', targetSets: 4, targetReps: '10', defaultWeight: 120 },
-      { name: 'Peso muerto rumano', muscle: 'Piernas', targetSets: 3, targetReps: '8', defaultWeight: 85 },
-    ],
-    baseReactions: { '🔥': 6, '💪': 5, '👏': 4, '⚡': 3, '🏆': 1 },
-  },
-];
-
 const defaultGoals = { kcal: 2400, p: 160, c: 260, g: 70, weekly: { Pecho: 16, Espalda: 16, Piernas: 14, Hombro: 12, Brazos: 10 } };
+const withoutDefaultFriends = (friends = []) => friends.filter((friend) => friend.id !== 'f-carlos' && friend.id !== 'f-elena');
 const blank = (user) => ({
   routines: DEFAULT_ROUTINES,
   sessions: [],
@@ -60,8 +19,9 @@ const blank = (user) => ({
   cravings: {},
   exerciseNotes: {},
   draft: null,
-  friends: DEFAULT_FRIENDS,
+  friends: [],
   reactions: {},
+  bodyMetrics: [],
   friendCode: friendCodeOf(user),
 });
 
@@ -93,7 +53,13 @@ export const GymProvider = ({ user, logout, children }) => {
   const [data, setData] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(key));
-      if (saved) return { ...blank(user), ...saved, friendCode: saved.friendCode || friendCodeOf(user) };
+      if (saved) return {
+        ...blank(user),
+        ...saved,
+        friends: withoutDefaultFriends(saved.friends),
+        bodyMetrics: Array.isArray(saved.bodyMetrics) ? saved.bodyMetrics : [],
+        friendCode: saved.friendCode || friendCodeOf(user),
+      };
     } catch { /* datos corruptos: se empieza de cero */ }
     return migrateLegacy(user) || blank(user);
   });
@@ -123,6 +89,15 @@ export const GymProvider = ({ user, logout, children }) => {
     saveRoutines: (routines) => up(() => ({ routines })),
     saveGoals: (goals) => up((d) => ({ goals: { ...d.goals, ...goals } })),
     saveRecipes: (recipes) => up(() => ({ recipes })),
+    saveBodyMetric: (metric, originalDate) => up((d) => ({
+      bodyMetrics: [
+        ...(d.bodyMetrics || []).filter((entry) => entry.date !== originalDate && entry.date !== metric.date),
+        metric,
+      ],
+    })),
+    deleteBodyMetric: (date) => up((d) => ({
+      bodyMetrics: (d.bodyMetrics || []).filter((entry) => entry.date !== date),
+    })),
     saveDraft: (draft) => up(() => ({ draft })),
     saveCraving: (date, text) => up((d) => {
       const next = { ...d.cravings };
@@ -168,7 +143,11 @@ export const GymProvider = ({ user, logout, children }) => {
       const parsed = JSON.parse(text);
       const incoming = parsed?.data;
       if (parsed?.app !== 'gym' || !incoming || !Array.isArray(incoming.sessions)) throw new Error('El archivo no es una copia válida.');
-      setData({ ...blank(user), ...incoming });
+      setData({
+        ...blank(user),
+        ...incoming,
+        bodyMetrics: Array.isArray(incoming.bodyMetrics) ? incoming.bodyMetrics : [],
+      });
     },
   };
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
